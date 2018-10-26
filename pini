@@ -1,0 +1,185 @@
+#!/bin/bash
+# set -x
+clear
+
+###
+#
+# Pini 1.0.0
+#
+# Management tool for php.ini files.
+#
+# 	Check values
+# 	update values
+#
+# BASH / Linux
+#
+# Copyright 2018 Lee Hodson<https://journalxtra.com>
+#
+# Released: 26th Oct. 2018
+#
+# INSTRUCTIONS
+#
+#	Put into the ${find[@]} array the names of the PHP variables whose values are to be changed.
+#	Put the variable names and their new values into the ${replace[@]} array.
+# Make sure the find and replace arrays match up 1-to-1 e.g ${find[1]} 'item 1' must be at an equal index to ${replace[1]} 'item 1'
+#
+# The script detects php.ini files in /etc/php/* and /var/www/*
+# Add other directories to the ${search[@]} array if required.
+#
+# RUN
+#
+# Make sure the script is set to safe mode initially
+# Run the script with `bash ./pini` or some equivalent command.
+# Pini will display on screen the variables alongside their updated values.
+# Confirm the new values for the php.ini variables are correct for each php.ini file.
+# Read the script output to assess the new values are as desired.
+# You can pipe the output to a file if you wish e.g. `bash ./pini > output.txt` will do the job.
+#
+# If all is correct
+# 	Set safe mode to live
+# 	Run the script again.
+# 	Restart Apache.
+#
+# You may need to run as sudo in live mode.
+#
+# MODES
+#
+# Safe mode works on php.ini file copies written to the active directory. Original files are not altered.
+# Live mode works on php.ini files wherever they are found. Backup copies are written to the active directory. Original files are edited.
+# Check mode shows php.ini values only. The program exits before any files are edited.
+# Each copy/backup php.ini is numbered.
+# Pini's screen output (or piped file output) lists each php.ini file's PHP variables as <heading>'#: File Location'</heading> then observed settings.
+#
+# Use of this program is at your own risk.
+#
+###
+
+# SAFEMODE
+
+mode='check' # safe, live or check
+
+# SETTINGS
+
+bold=$(tput bold)
+normal=$(tput sgr0)
+
+# Locate where we are
+filepath="$( echo $PWD )"
+
+data="$filepath/data.tmp"
+
+declare -a find replace doc search
+
+# Remove old data file
+
+if test -f "${data}"
+then
+	rm ${data}
+fi
+
+search=( '/etc/php/.*php.*\.ini$' '/var/www/.*php\.ini$' )
+
+# Detect php.ini file locations
+for i in "${search[@]}"
+do
+	locate -iqr "$i" >> $data
+done
+
+find=(
+	"output_buffering"
+	"zlib.output_compression"
+	"max_execution_time"
+	"max_input_time"
+	"memory_limit"
+	"log_errors_max_len"
+	"ignore_repeated_errors"
+	"ignore_repeated_source"
+	"post_max_size"
+	"upload_max_filesize"
+	"default_socket_timeout"
+	"pdo_mysql.cache_size"
+	"mysqli.cache_size"
+	"opcache.enable"
+	"opcache.enable_cli"
+)
+
+replace=(
+	"output_buffering = 8192"
+	"zlib.output_compression = On"
+	"max_execution_time = 300"
+	"max_input_time = 300"
+	"memory_limit = 256M"
+	"log_errors_max_len = 4096"
+	"ignore_repeated_errors = On"
+	"ignore_repeated_source = On"
+	"post_max_size = 0"
+	"upload_max_filesize = 512M"
+	"default_socket_timeout = 300"
+	"pdo_mysql.cache_size = 8000"
+	"mysqli.cache_size = 8000"
+	"opcache.enable=1"
+	"opcache.enable_cli=1"
+)
+
+# ACTION
+
+if [ ${#find[@]} -ne ${#replace[@]} ]
+then
+	echo "Find and Replace array miscounts. Check your statements and try again. Press a key to exit."
+	read a
+	exit
+fi
+
+
+while read -r line
+do
+	doc+=( $line )
+done < "$data"
+
+t=0
+for l in "${doc[@]}"
+do
+
+	case $mode in
+		safe)
+			ini="${filepath}/${t}-php.ini.copy"
+			cp "$l" "${ini}"
+		;;
+		
+		live)
+			ini="${l}"
+			cp "$l" "${filepath}/${t}-php.ini.bck"
+		;;
+		check)
+			ini="${l}"
+		;;
+		
+		*)
+			echo "Set safe/live/check mode flag in script settings then try again."
+			exit
+		;;
+		
+	esac
+
+	case mode in
+		safe|live)
+			n=0
+			for item in "${find[@]}"
+			do
+
+				f=${find[$n]}
+				r=${replace[$n]}
+				sed -i -E "s/[; ]?${f}[[:space:]]?[=].*/${r}/" "${ini}"
+				let n=n+1
+
+			done
+		;;
+	esac
+
+	echo
+	echo "$t: ${bold}${l}${normal}"
+	echo
+	grep -v "^[;\[]" "${ini}" | sed '/^[[:blank:]]*$/d'
+
+	let t=t+1
+done
